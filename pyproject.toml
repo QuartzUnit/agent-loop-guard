@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-loop-guard"
-version = "0.1.0"
+version = "0.1.1"
 description = "Framework-agnostic agent loop detection — sliding window similarity scoring to catch stuck agents"
 readme = "README.md"
 license = "MIT"
