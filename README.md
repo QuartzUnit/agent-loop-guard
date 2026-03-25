@@ -1,5 +1,7 @@
 # agent-loop-guard
 
+> [한국어 문서](README.ko.md)
+
 Framework-agnostic agent loop detection — sliding window similarity scoring to catch stuck agents.
 
 ## Install
