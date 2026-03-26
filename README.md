@@ -98,6 +98,10 @@ callback = LoopGuardCallback(
 decision = callback.before_tool_call("search", {"query": "test"})
 ```
 
+## Used in
+
+- [watchdeck](https://github.com/QuartzUnit/watchdeck) — Web page monitoring with visual diffs and safety guards
+
 ## License
 
 MIT
