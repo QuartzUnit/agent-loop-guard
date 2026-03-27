@@ -44,6 +44,23 @@ for action in agent_actions:
 
 All four strategies run on every call. The highest confidence wins.
 
+```mermaid
+flowchart TD
+    A["🔄 Agent Tool Call"] --> B["Sliding Window\nHistory Buffer"]
+    B --> C["Exact Repeat\nDetector"]
+    B --> D["Fuzzy Repeat\nDetector"]
+    B --> E["Cycle\nDetector"]
+    B --> F["Output Stagnation\nDetector"]
+    C --> G{"Max\nConfidence"}
+    D --> G
+    E --> G
+    F --> G
+    G -->|"low"| H["✅ ALLOW"]
+    G -->|"medium"| I["⚠️ WARN"]
+    G -->|"high"| J["🛑 STOP"]
+    G -->|"critical"| K["🚨 ESCALATE"]
+```
+
 ## API
 
 ```python
