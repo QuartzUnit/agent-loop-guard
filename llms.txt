@@ -1,90 +1,19 @@
 # agent-loop-guard
 
-> Framework-agnostic agent loop detection -- sliding window similarity scoring to catch stuck agents
+> Framework-agnostic agent loop detection — sliding window similarity scoring to catch stuck agents.
 
-## Purpose
+- `pip install agent-loop-guard`
+- Python >=3.9 | zero dependencies
+- Strategies: exact repeat, fuzzy repeat (Jaccard+edit distance), cycle detection, output stagnation
+- Actions: CONTINUE → WARN → STOP → ESCALATE (configurable thresholds)
+- Exports: `LoopGuard`, `Action`, `ActionConfig`, `Decision`, `ActionRecord`
+- Callback adapter: `from loop_guard.integrations.generic import LoopGuardCallback`
 
-Detects when AI agents get stuck in repetitive loops by analyzing tool call patterns using four complementary strategies. Returns graduated actions (CONTINUE, WARN, STOP, ESCALATE) based on configurable thresholds. Zero external dependencies.
-
-## Capabilities
-
-- **Exact repeat detection**: Catches identical consecutive tool calls with the same arguments
-- **Fuzzy repeat detection**: Catches near-identical tool calls using Jaccard + edit distance similarity
-- **Cycle detection**: Identifies repeating tool sequences (e.g., A->B->C->A->B->C)
-- **Output stagnation**: Detects when tool outputs stop changing across calls
-- **Graduated response**: Configurable escalation from WARN to STOP to ESCALATE based on consecutive hit count
-- **Framework-agnostic callback**: `LoopGuardCallback` adapter for any agent framework
-
-## Installation
-
-pip install agent-loop-guard
-
-## Quick Use
-
-### Python
 ```python
 from loop_guard import LoopGuard, Action
-
 guard = LoopGuard()
-for action in agent_actions:
-    decision = guard.check(action.tool, action.args, action.output)
-    if decision.action == Action.STOP:
-        break
-    if decision.should_warn:
-        print(f"Warning: {decision.reason}")
+decision = guard.check(tool="search", args={"q": "test"}, output="result")
+if decision.action == Action.STOP: ...
 ```
 
-## API Reference
-
-### LoopGuard
-- signature: `LoopGuard(window_size: int = 10, similarity_threshold: float = 0.85, action_config: ActionConfig = ActionConfig())`
-- description: Main loop detector. Orchestrates four detection strategies (exact repeat, fuzzy repeat, cycle detection, output stagnation) and returns graduated decisions.
-
-### LoopGuard.check
-- signature: `check(self, tool: str, args: dict[str, Any] | str | None = None, output: str | None = None) -> Decision`
-- description: Check an agent action for loop patterns. Runs all four strategies and returns the highest-confidence detection result. Passing `output` enables stagnation detection.
-- returns: `Decision`
-
-### LoopGuard.reset
-- signature: `reset(self) -> None`
-- description: Reset all internal state (step counter, hit counter, all strategy histories) for reuse.
-- returns: `None`
-
-### LoopGuard.step_count
-- signature: `step_count -> int` (property)
-- description: Number of actions checked so far.
-- returns: `int`
-
-### LoopGuard.consecutive_hits
-- signature: `consecutive_hits -> int` (property)
-- description: Current count of consecutive loop detections.
-- returns: `int`
-
-### Action (Enum)
-- values: `CONTINUE`, `WARN`, `STOP`, `ESCALATE`
-- description: What to do when a loop pattern is detected.
-
-### Decision
-- signature: `Decision(action: Action, reason: str = "", strategy: str = "", confidence: float = 0.0, step_number: int = 0)`
-- description: Frozen dataclass. Result of a loop guard check. `strategy` indicates which detection method triggered (e.g., `exact_repeat`, `fuzzy_repeat`, `cycle_detection`, `output_stagnation`). `confidence` ranges from 0.0 to 1.0.
-- properties: `is_loop -> bool` (True if STOP or ESCALATE), `should_warn -> bool` (True if WARN)
-
-### ActionConfig
-- signature: `ActionConfig(warn_threshold: int = 2, stop_threshold: int = 4, escalate_threshold: int = 6, reflection_message: str = "You appear to be stuck in a loop. Try a different approach.")`
-- description: Configure how many consecutive hits trigger each action level.
-
-### ActionRecord
-- signature: `ActionRecord(tool: str, args: dict | str | None = None, output: str | None = None, step: int = 0)`
-- description: Dataclass representing a single agent action in the history.
-
-### LoopGuardCallback
-- signature: `LoopGuardCallback(guard: LoopGuard | None = None, on_warn: Callable[[Decision], None] | None = None, on_stop: Callable[[Decision], Any] | None = None, on_escalate: Callable[[Decision], Any] | None = None, **guard_kwargs)`
-- description: Callback adapter for any agent framework. Wraps LoopGuard and dispatches to user-provided callbacks on WARN/STOP/ESCALATE events.
-- method: `before_tool_call(tool: str, args: dict | str | None = None, output: str | None = None) -> Decision`
-- import: `from loop_guard.integrations.generic import LoopGuardCallback`
-
-## Links
-
-- Docs: https://github.com/QuartzUnit/agent-loop-guard
-- PyPI: https://pypi.org/project/agent-loop-guard/
-- Source: https://github.com/QuartzUnit/agent-loop-guard
+- [Docs](https://github.com/QuartzUnit/agent-loop-guard) | [PyPI](https://pypi.org/project/agent-loop-guard/) | [Full API](/llms-full.txt)
