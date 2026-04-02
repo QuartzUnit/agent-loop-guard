@@ -1,0 +1,319 @@
+# agent-loop-guard
+
+> Framework-agnostic agent loop detection -- sliding window similarity scoring to catch stuck agents
+
+## Purpose
+
+Detects when AI agents get stuck in repetitive loops by analyzing tool call patterns using four complementary strategies. Returns graduated actions (CONTINUE, WARN, STOP, ESCALATE) based on configurable thresholds. Zero external dependencies.
+
+## Capabilities
+
+- **Exact repeat detection**: Catches identical consecutive tool calls with the same arguments
+- **Fuzzy repeat detection**: Catches near-identical tool calls using Jaccard + edit distance similarity
+- **Cycle detection**: Identifies repeating tool sequences (e.g., A->B->C->A->B->C)
+- **Output stagnation**: Detects when tool outputs stop changing across calls
+- **Graduated response**: Configurable escalation from WARN to STOP to ESCALATE based on consecutive hit count
+- **Framework-agnostic callback**: `LoopGuardCallback` adapter for any agent framework
+
+## Installation
+
+```
+pip install agent-loop-guard
+```
+
+## Quick Use
+
+```python
+from loop_guard import LoopGuard, Action
+
+guard = LoopGuard()
+for action in agent_actions:
+    decision = guard.check(action.tool, action.args, action.output)
+    if decision.action == Action.STOP:
+        break
+    if decision.should_warn:
+        print(f"Warning: {decision.reason}")
+```
+
+## Architecture
+
+LoopGuard orchestrates four independent detection strategies. Each strategy maintains its own sliding window history and returns a `(confidence, reason)` tuple on every `check()` call. The guard takes the highest-confidence result, increments a consecutive hit counter when confidence exceeds 0.3, and maps the hit count to an action via ActionConfig thresholds.
+
+```
+                    LoopGuard.check(tool, args, output)
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼                     ▼
+  ExactRepeat          FuzzyRepeat          CycleDetection      OutputStagnation
+  (identity)        (Jaccard+edit)        (sequence match)      (output diff)
+        │                     │                     │                     │
+        └─────────────────────┼─────────────────────┘
+                              ▼
+                   max(confidence) > 0.3?
+                   ├── yes → consecutive_hits++
+                   └── no  → consecutive_hits = 0
+                              │
+                              ▼
+                   ActionConfig.resolve_action()
+                   ├── hits >= 6 → ESCALATE
+                   ├── hits >= 4 → STOP
+                   ├── hits >= 2 → WARN
+                   └── else      → CONTINUE
+```
+
+## API Reference
+
+### LoopGuard
+
+```python
+from loop_guard import LoopGuard
+```
+
+Main loop detector dataclass.
+
+**Constructor:**
+```python
+LoopGuard(
+    window_size: int = 10,             # sliding window size for strategies
+    similarity_threshold: float = 0.85, # threshold for fuzzy/stagnation detection
+    action_config: ActionConfig = ActionConfig()  # escalation thresholds
+)
+```
+
+**Parameters:**
+- `window_size` — Number of recent actions to keep in each strategy's history. Larger windows catch slower loops but use more memory. Range: 2-100. Default: 10.
+- `similarity_threshold` — Minimum similarity score (0.0-1.0) for fuzzy repeat and output stagnation strategies to flag a match. Lower values catch more variations but increase false positives. Default: 0.85.
+- `action_config` — ActionConfig instance controlling how consecutive hits map to actions.
+
+**Methods:**
+
+`check(tool: str, args: dict[str, Any] | str | None = None, output: str | None = None) -> Decision`
+- Check a single agent action for loop patterns. Call this once per tool invocation.
+- `tool` — Name of the tool/function being called (e.g., "search", "bash", "read_file").
+- `args` — Arguments passed to the tool. Accepts dict, str, or None. Dicts are normalized to sorted key=value strings for comparison.
+- `output` — Result/output of the tool call. Optional. When provided, enables the output stagnation strategy.
+- Returns: Decision with action, reason, strategy name, confidence, and step number.
+
+`reset() -> None`
+- Clear all internal state (step counter, hit counter, all strategy histories). Use when starting a new task within the same session.
+
+**Properties:**
+- `step_count -> int` — Total number of actions checked since creation or last reset.
+- `consecutive_hits -> int` — Current streak of consecutive loop detections (confidence > 0.3).
+
+### Action
+
+```python
+from loop_guard import Action
+```
+
+Enum with four levels:
+- `Action.CONTINUE` — No loop detected, proceed normally.
+- `Action.WARN` — Possible loop, inject a reflection message but continue.
+- `Action.STOP` — Confirmed loop, halt the current approach.
+- `Action.ESCALATE` — Persistent loop despite warnings, hand off to human.
+
+### Decision
+
+```python
+from loop_guard import Decision
+```
+
+Frozen dataclass returned by `LoopGuard.check()`.
+
+**Fields:**
+- `action: Action` — The recommended action.
+- `reason: str` — Human-readable explanation (e.g., "Exact repeat: 'search' repeated 4 times consecutively").
+- `strategy: str` — Which detection method triggered. One of: `"exact_repeat"`, `"fuzzy_repeat"`, `"cycle_detection"`, `"output_stagnation"`, or `""` (no detection).
+- `confidence: float` — Detection confidence from 0.0 (no loop) to 1.0 (definite loop).
+- `step_number: int` — Sequential action number.
+
+**Properties:**
+- `is_loop -> bool` — True when action is STOP or ESCALATE.
+- `should_warn -> bool` — True when action is WARN.
+
+### ActionConfig
+
+```python
+from loop_guard import ActionConfig
+```
+
+Dataclass controlling escalation thresholds.
+
+**Constructor:**
+```python
+ActionConfig(
+    warn_threshold: int = 2,       # consecutive hits before WARN
+    stop_threshold: int = 4,       # consecutive hits before STOP
+    escalate_threshold: int = 6,   # consecutive hits before ESCALATE
+    reflection_message: str = "You appear to be stuck in a loop. Try a different approach."
+)
+```
+
+**Method:**
+- `resolve_action(consecutive_hits: int) -> Action` — Map a hit count to the appropriate action level.
+
+### ActionRecord
+
+```python
+from loop_guard import ActionRecord
+```
+
+Dataclass representing a single agent action in strategy histories.
+
+**Fields:**
+- `tool: str` — Tool name.
+- `args: dict | str | None` — Tool arguments. Default: None.
+- `output: str | None` — Tool output. Default: None.
+- `step: int` — Step number. Default: 0.
+
+### LoopGuardCallback
+
+```python
+from loop_guard.integrations.generic import LoopGuardCallback
+```
+
+Callback adapter that wraps LoopGuard for any agent framework.
+
+**Constructor:**
+```python
+LoopGuardCallback(
+    guard: LoopGuard | None = None,                      # existing guard or None to create one
+    on_warn: Callable[[Decision], None] | None = None,    # called on WARN
+    on_stop: Callable[[Decision], Any] | None = None,     # called on STOP
+    on_escalate: Callable[[Decision], Any] | None = None, # called on ESCALATE
+    **guard_kwargs                                        # forwarded to LoopGuard() if guard is None
+)
+```
+
+**Methods:**
+- `before_tool_call(tool: str, args: dict | str | None = None, output: str | None = None) -> Decision` — Check and dispatch callbacks. Returns the Decision regardless of action.
+- `reset() -> None` — Reset the underlying guard.
+
+## Detection Strategies (Internal)
+
+### ExactRepeatStrategy
+Tracks a sliding window of recent actions. Returns confidence based on how many consecutive identical (tool, args) pairs appear. Full window of identical calls = confidence 1.0.
+
+### FuzzyRepeatStrategy
+Compares the current action against all previous actions in the window using `args_similarity()`. Counts how many exceed the similarity threshold. Confidence = high_sim_count / (window_size - 1).
+
+### CycleDetectionStrategy
+Maintains a tool name sequence and tests for repeating patterns of length 2 to `max_cycle_length`. Skips degenerate patterns (all same tool). Confidence = repetitions / (min_repetitions + 2). Trims history to prevent unbounded growth.
+
+### OutputStagnationStrategy
+Compares tool outputs (not args) for the same tool. When outputs stop changing (similarity >= threshold), flags stagnation. Requires `output` parameter in `check()`.
+
+## Similarity Functions
+
+```python
+from loop_guard.similarity import jaccard_similarity, token_jaccard, edit_similarity, args_similarity
+```
+
+- `jaccard_similarity(a: set, b: set) -> float` — Set intersection / union. Returns 1.0 for two empty sets.
+- `token_jaccard(s1: str, s2: str) -> float` — Jaccard on whitespace-split token sets.
+- `normalized_edit_distance(s1: str, s2: str) -> float` — Levenshtein distance / max(len), O(min(m,n)) space. Returns 0.0 for identical strings.
+- `edit_similarity(s1: str, s2: str) -> float` — 1.0 - normalized_edit_distance.
+- `args_similarity(args1, args2) -> float` — Normalizes args to strings, then blends 50% token_jaccard + 50% edit_similarity. For strings > 2000 chars, uses only Jaccard (performance).
+
+**Args normalization:** None → "", str → as-is, dict → sorted "key=value" pairs joined by spaces, other → str().
+
+## Examples
+
+### Basic usage with custom thresholds
+
+```python
+from loop_guard import LoopGuard, ActionConfig
+
+config = ActionConfig(warn_threshold=3, stop_threshold=5, escalate_threshold=8)
+guard = LoopGuard(window_size=15, similarity_threshold=0.80, action_config=config)
+
+decision = guard.check("search", {"query": "python tutorial"})
+print(decision.action)       # Action.CONTINUE
+print(decision.confidence)   # 0.0
+print(decision.strategy)     # ""
+```
+
+### Detecting fuzzy repeats
+
+```python
+guard = LoopGuard()
+
+guard.check("search", {"query": "how to fix error"})
+guard.check("search", {"query": "how to fix the error"})    # similar
+guard.check("search", {"query": "how to fix this error"})   # similar
+d = guard.check("search", {"query": "how to fix an error"}) # similar
+print(d.strategy)     # "fuzzy_repeat"
+print(d.confidence)   # > 0.0
+```
+
+### Detecting cycles (A->B->A->B)
+
+```python
+guard = LoopGuard()
+
+for _ in range(4):
+    guard.check("read_file", {"path": "/tmp/a.txt"})
+    guard.check("edit_file", {"path": "/tmp/a.txt", "content": "..."})
+
+d = guard.check("read_file", {"path": "/tmp/a.txt"})
+print(d.strategy)  # "cycle_detection"
+```
+
+### Output stagnation detection
+
+```python
+guard = LoopGuard()
+
+for _ in range(5):
+    d = guard.check("run_tests", {}, output="FAIL: test_login (AssertionError)")
+
+print(d.strategy)  # "output_stagnation"
+print(d.is_loop)   # True (after enough consecutive hits)
+```
+
+### Callback integration
+
+```python
+from loop_guard.integrations.generic import LoopGuardCallback
+
+def handle_warn(decision):
+    print(f"[WARN] {decision.reason}")
+
+def handle_stop(decision):
+    raise StopIteration(f"Loop detected: {decision.reason}")
+
+callback = LoopGuardCallback(
+    on_warn=handle_warn,
+    on_stop=handle_stop,
+    window_size=8,
+    similarity_threshold=0.90,
+)
+
+# In your agent loop:
+for tool_call in agent.run():
+    decision = callback.before_tool_call(tool_call.name, tool_call.args, tool_call.result)
+    # callbacks fire automatically on WARN/STOP/ESCALATE
+```
+
+### Reusing guard across tasks
+
+```python
+guard = LoopGuard()
+
+# Task 1
+for action in task_1_actions:
+    guard.check(action.tool, action.args)
+
+guard.reset()  # clear all history
+
+# Task 2 — starts fresh
+for action in task_2_actions:
+    guard.check(action.tool, action.args)
+```
+
+## Links
+
+- Docs: https://github.com/QuartzUnit/agent-loop-guard
+- PyPI: https://pypi.org/project/agent-loop-guard/
+- Source: https://github.com/QuartzUnit/agent-loop-guard
