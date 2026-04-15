@@ -9,7 +9,7 @@ description = "Framework-agnostic agent loop detection — sliding window simila
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
-authors = [{ name = "hmj", email = "hmj@quartzunit.com" }]
+authors = [{ name = "QuartzUnit" }]
 keywords = [
     "agent",
     "loop",
@@ -37,6 +37,8 @@ classifiers = [
 Homepage = "https://github.com/QuartzUnit/agent-loop-guard"
 Repository = "https://github.com/QuartzUnit/agent-loop-guard"
 Issues = "https://github.com/QuartzUnit/agent-loop-guard/issues"
+Documentation = "https://github.com/QuartzUnit/agent-loop-guard#readme"
+Changelog = "https://github.com/QuartzUnit/agent-loop-guard/releases"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/loop_guard"]

@@ -122,3 +122,8 @@ decision = callback.before_tool_call("search", {"query": "test"})
 ## License
 
 MIT
+
+
+---
+
+<sub>Part of the [QuartzUnit](https://github.com/QuartzUnit) ecosystem — composable Python libraries for data collection, extraction, search, and AI agent safety.</sub>
