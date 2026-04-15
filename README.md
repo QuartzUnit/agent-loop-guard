@@ -1,6 +1,6 @@
 # agent-loop-guard
 
-> [한국어 문서](README.ko.md)
+> [한국어 문서](README.ko.md) · [llms.txt](llms.txt)
 
 Framework-agnostic agent loop detection — sliding window similarity scoring to catch stuck agents.
 
